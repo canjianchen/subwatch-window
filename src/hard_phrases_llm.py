@@ -11,6 +11,7 @@ works offline with the curated list. Used by the watch loop only when
 `use_llm_phrases` is enabled in config (off by default to avoid per-frame cost).
 """
 import json
+import os
 
 import codex_ai
 import config
@@ -309,18 +310,37 @@ def extract_hard_stream(sentence, level="advanced"):
         yield {"_failed": True}
 
 
-def _stream_jsonl(prompt, max_tokens=600):
-    """Yield JSONL objects from Codex's final response AS each line arrives.
+def _streaming_enabled():
+    """Whether to read Codex output incrementally (ask_lines) vs. one buffered call.
 
-    Streams stdout line-by-line via codex_ai.ask_lines so the first usable item lands in
-    ~3s instead of after the whole response. A single JSON object may be split across
-    lines, so we buffer until braces balance, then parse. Falls back to a buffered call
-    if streaming isn't available for any reason (never breaks the capture loop).
-    """
+    OFF by default on Windows: line-buffered pipe reads from the Codex CLI behave
+    differently there and were observed to hang the scoring worker (the overlay stayed
+    on '翻译中…' with no captures ever printed). The buffered path is the proven-reliable
+    one on all platforms; streaming only shaves a few seconds of first-word latency, so
+    it's opt-in via config `stream_scoring: true`."""
     try:
-        line_iter = codex_ai.ask_lines(prompt, effort="low", timeout=180)
-    except Exception:  # noqa: BLE001 — fall back to the buffered path below
-        line_iter = None
+        cfg = config.load_config()
+        if "stream_scoring" in cfg:
+            return bool(cfg["stream_scoring"])
+    except Exception:  # noqa: BLE001
+        pass
+    return os.name != "nt"
+
+
+def _stream_jsonl(prompt, max_tokens=600):
+    """Yield JSONL objects from Codex's response.
+
+    When streaming is enabled, reads stdout line-by-line via codex_ai.ask_lines so the
+    first usable item lands sooner. Otherwise (and by default on Windows) it makes one
+    buffered call — the reliable path. Either way, malformed/split JSON is tolerated and
+    a failure never breaks the capture loop.
+    """
+    line_iter = None
+    if _streaming_enabled():
+        try:
+            line_iter = codex_ai.ask_lines(prompt, effort="low", timeout=180)
+        except Exception:  # noqa: BLE001 — fall back to the buffered path below
+            line_iter = None
 
     if line_iter is not None:
         buffer = ""
