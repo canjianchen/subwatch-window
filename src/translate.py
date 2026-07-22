@@ -22,18 +22,57 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 import time
 import urllib.parse
 import urllib.request
 
 import config
 
-_TIMEOUT = 8
+# Keep the per-request timeout SHORT: subtitles scroll fast, and a blocked/slow endpoint
+# must not make a word sit on "翻译中…". If the network is bad we want to fail over to the
+# LLM's own Chinese quickly, not wait 8s per word.
+_TIMEOUT = 3.5
 _HEADERS = {"User-Agent": "Mozilla/5.0 (SubWatch translation)"}
 _CACHE_PATH = os.path.join(config.DB_DIR, "translation_cache.db")
 
 # in-process memo on top of the SQLite cache, to avoid a disk hit for repeats within a run
 _MEMO: dict[str, str] = {}
+
+# ── circuit breaker ─────────────────────────────────────────────────────────
+# On a network where the free endpoints are blocked (e.g. a corporate proxy / TLS
+# interception), retrying every word wastes seconds each and freezes the overlay on
+# "翻译中…". After a run of consecutive failures we OPEN the breaker: translate_to_zh()
+# returns None immediately (no network) for a cool-off period, so callers fall back to
+# the LLM's Chinese instantly. A single success closes it again.
+_BREAKER_LOCK = threading.Lock()
+_FAILS = 0
+_FAIL_THRESHOLD = 3
+_OPEN_UNTIL = 0.0
+_COOLOFF_SECONDS = 60.0
+# Cached result of the one-time reachability probe used by reachable(): (checked_at, ok).
+_PROBE = {"at": 0.0, "ok": None}
+_PROBE_TTL = 120.0
+
+
+def _breaker_open():
+    with _BREAKER_LOCK:
+        return time.time() < _OPEN_UNTIL
+
+
+def _record_success():
+    global _FAILS, _OPEN_UNTIL
+    with _BREAKER_LOCK:
+        _FAILS = 0
+        _OPEN_UNTIL = 0.0
+
+
+def _record_failure():
+    global _FAILS, _OPEN_UNTIL
+    with _BREAKER_LOCK:
+        _FAILS += 1
+        if _FAILS >= _FAIL_THRESHOLD:
+            _OPEN_UNTIL = time.time() + _COOLOFF_SECONDS
 
 
 def _http_json(url):
@@ -131,7 +170,9 @@ def translate_to_zh(text):
 
     Never raises — translation is best-effort so enrichment/capture keep working even
     when offline. Results are cached (per exact source string) so a repeated term costs
-    nothing after the first lookup."""
+    nothing after the first lookup. When the network endpoints keep failing (blocked
+    proxy, offline), a circuit breaker makes this return None instantly so the caller
+    falls back to the LLM's own Chinese rather than waiting on every word."""
     if not text or not text.strip():
         return None
     text = text.strip()
@@ -147,6 +188,12 @@ def translate_to_zh(text):
             _cache_put(text, result)
         return result
 
+    # breaker open → the network is known-bad right now; don't stall, let the caller
+    # use the LLM Chinese. (Codex-only provider is exempt: it's local, not network.)
+    provider = config.load_config().get("translate_provider", "auto")
+    if provider != "codex" and _breaker_open():
+        return None
+
     for backend in _backends():
         try:
             result = backend(text)
@@ -154,8 +201,35 @@ def translate_to_zh(text):
             continue
         if result:
             _cache_put(text, result)
+            if backend is not _codex:
+                _record_success()
             return result
+    # every network backend failed (codex fallback also empty) → count toward the breaker
+    if provider != "codex":
+        _record_failure()
     return None
+
+
+def reachable():
+    """Best-effort: is a free network translation endpoint actually usable right now?
+
+    Result is cached for a couple of minutes. Used by callers to decide the split — if the
+    API can't be reached (blocked corporate proxy, offline), they keep asking the LLM for
+    Chinese inline instead of leaving cards untranslated. Codex-only provider and
+    local_only are treated as 'reachable' since they don't need the network."""
+    cfg = config.load_config()
+    if cfg.get("local_only") or cfg.get("translate_provider") == "codex":
+        return True
+    now = time.time()
+    if _PROBE["ok"] is not None and now - _PROBE["at"] < _PROBE_TTL:
+        return _PROBE["ok"]
+    if _breaker_open():
+        _PROBE.update(at=now, ok=False)
+        return False
+    # a tiny real translation is the most honest probe (and warms the cache).
+    ok = bool(translate_to_zh("hello"))
+    _PROBE.update(at=now, ok=ok)
+    return ok
 
 
 if __name__ == "__main__":

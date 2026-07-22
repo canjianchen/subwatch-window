@@ -408,7 +408,7 @@ def _stream_and_store(english_text, chinese_ctx, level, sequence=None):
 
     if line_future is not None:
         try:
-            line_cn = line_future.result(timeout=8)
+            line_cn = line_future.result(timeout=4)
         except Exception:  # noqa: BLE001
             line_cn = None
         if line_cn:
@@ -418,14 +418,16 @@ def _stream_and_store(english_text, chinese_ctx, level, sequence=None):
     for obj, term_future in pending:
         if term_future is not None and not (obj.get("translation") or obj.get("chinese")):
             try:
-                api_cn = term_future.result(timeout=8)
+                api_cn = term_future.result(timeout=4)
             except Exception:  # noqa: BLE001
                 api_cn = None
             if api_cn:
                 obj["translation"] = api_cn
-        term_cn = (obj.get("translation") or obj.get("chinese") or "").strip()
-        # A word card without its Chinese meaning is incomplete. Ignore a malformed model
-        # item (or a term the translation API couldn't render) rather than showing a blank card.
+        # Prefer the term's direct Chinese; fall back to the LLM's contextual gloss, then
+        # its English definition. Something ALWAYS shows — a card must never sit on
+        # "翻译中…" just because the translation API couldn't render it.
+        term_cn = (obj.get("translation") or obj.get("chinese")
+                   or obj.get("definition") or "").strip()
         if not term_cn:
             continue
         stored = _store_item(obj, english_text, sentence_cn, level)

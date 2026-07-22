@@ -13,10 +13,12 @@ import translate
 
 
 def _use_translation_api():
-    """True when translation should come from the cheap API instead of Codex."""
+    """True when translation should come from the cheap API instead of Codex.
+    Delegates to hard_phrases_llm.translation_by_api() so the reachability check
+    (don't drop the LLM's Chinese when the network endpoints are blocked) is shared."""
     try:
-        cfg = _cfg.load_config()
-        return bool(cfg.get("use_translation_api")) and not cfg.get("local_only")
+        import hard_phrases_llm
+        return hard_phrases_llm.translation_by_api()
     except Exception:  # noqa: BLE001
         return False
 

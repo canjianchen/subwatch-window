@@ -24,11 +24,16 @@ def reset_client():
 def translation_by_api():
     """True when the cheap translation API should supply Chinese, so the difficulty
     prompt can stop asking Codex for it (saving output tokens on every graded line).
-    False in local_only mode (no network) so the single grading call keeps producing
-    Chinese inline instead of triggering a separate per-term Codex fallback."""
+
+    False when the API is disabled, in local_only mode, OR when the network endpoints
+    aren't actually reachable right now — in which case the grading call keeps producing
+    Chinese inline so cards never end up stuck on "翻译中…" with no translation source."""
     try:
         cfg = config.load_config()
-        return bool(cfg.get("use_translation_api")) and not cfg.get("local_only")
+        if not cfg.get("use_translation_api") or cfg.get("local_only"):
+            return False
+        import translate
+        return translate.reachable()
     except Exception:  # noqa: BLE001
         return False
 
