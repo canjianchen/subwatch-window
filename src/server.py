@@ -260,6 +260,9 @@ def _start(name, script):
                 cwd=SRC,
                 stdout=log,
                 stderr=subprocess.STDOUT,
+                # keep GUI children (overlays) from flashing a console window on Windows;
+                # harmless 0 on macOS.
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         finally:
             log.close()
@@ -281,6 +284,7 @@ def _start_with_args(name, script, args, detached=False):
             [PY, os.path.join(SRC, script), *args],
             cwd=SRC, stdout=log, stderr=log,
             start_new_session=detached,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         _ps_cache["entries"] = None
         return True
@@ -1332,8 +1336,14 @@ def main():
         pass
 
     def _shutdown(*_):
-        _stop("watch")
-        _stop("overlay")
+        # Stop every panel-launched child so quitting the server doesn't leak the mic,
+        # audio routing, or floating overlay windows. Meeting capture is intentionally
+        # detached (start_new_session) so it survives a panel bounce — leave it running.
+        for name in ("watch", "overlay", "subtitle", "vocab", "listen"):
+            try:
+                _stop(name)
+            except Exception:  # noqa: BLE001 — best-effort cleanup, keep shutting down
+                pass
         server.shutdown()
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)

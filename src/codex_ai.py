@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import threading
 import time
 
 import config
@@ -109,6 +110,92 @@ def ask(prompt, *, system=None, model=None, effort="low", timeout=180):
     if not text:
         raise RuntimeError("Codex returned an empty response")
     return text
+
+
+def ask_lines(prompt, *, system=None, model=None, effort="low", timeout=180):
+    """Yield Codex's final response one line at a time, AS the CLI writes each line.
+
+    Same invocation as ask(), but streams stdout line-by-line instead of buffering the
+    whole response — so a JSONL consumer can act on the first object in ~3s instead of
+    waiting for the full ~6.5s answer. Raises RuntimeError on missing/failed Codex.
+    On a non-zero exit, whatever complete lines already streamed are still yielded; the
+    error is raised only if nothing was produced (so a caller never silently loses work).
+    """
+    exe = _native_codex()
+    if not exe:
+        raise RuntimeError("Codex CLI is not installed")
+    cfg = config.load_config()
+    model = model or cfg.get("codex_model", "gpt-5.6-terra")
+    instruction = (
+        "Do not inspect files, call tools, run commands, or modify anything. "
+        "Answer the task directly and return only the requested content."
+    )
+    if system:
+        instruction += f"\n\nSYSTEM INSTRUCTIONS:\n{system.strip()}"
+    full_prompt = f"{instruction}\n\nTASK:\n{prompt.strip()}"
+    cmd = [
+        exe, "exec", "--ephemeral", "--sandbox", "read-only",
+        "--ignore-rules", "--ignore-user-config", "--model", model,
+        "--config", f'model_reasoning_effort="{effort}"', "-",
+    ]
+    env = _codex_env()
+    env["PYTHONUTF8"] = "1"
+    try:
+        proc = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+            env=env, cwd=config.ROOT, bufsize=1,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except OSError as exc:
+        raise RuntimeError(f"Could not start Codex: {exc}") from exc
+
+    # A watchdog enforces the timeout since we're not using subprocess.run's timeout.
+    timed_out = {"value": False}
+
+    def _kill_on_timeout():
+        timed_out["value"] = True
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+    watchdog = threading.Timer(timeout, _kill_on_timeout)
+    watchdog.start()
+
+    # Drain stderr on a side thread so a chatty CLI can't fill the pipe buffer and
+    # deadlock the stdout reader below.
+    stderr_chunks = []
+
+    def _drain_stderr():
+        try:
+            for line in proc.stderr:
+                stderr_chunks.append(line)
+        except (OSError, ValueError):
+            pass
+
+    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    stderr_thread.start()
+
+    produced = False
+    try:
+        proc.stdin.write(full_prompt)
+        proc.stdin.close()
+        for line in proc.stdout:
+            produced = True
+            yield line.rstrip("\n")
+    finally:
+        watchdog.cancel()
+        try:
+            proc.stdout.close()
+        except OSError:
+            pass
+        proc.wait()
+        stderr_thread.join(timeout=1)
+    if timed_out["value"]:
+        raise RuntimeError(f"Codex timed out after {timeout}s")
+    if proc.returncode not in (0, None) and not produced:
+        detail = "".join(stderr_chunks).strip()
+        raise RuntimeError((detail or "Codex exited non-zero")[-500:])
 
 
 def clear_availability_cache():

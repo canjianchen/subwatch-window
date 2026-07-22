@@ -120,6 +120,12 @@ def is_common_word(word):
 def _base_forms(word):
     """Yield the word plus a few naive de-inflected forms for rank lookup."""
     yield word
+    # y->i inflections: "studies"->"study", "tried"->"try", "happier"->"happy".
+    # Without this these look absent from the frequency list and get wrongly flagged
+    # as "hard" in frequency mode.
+    for suffix in ("ies", "ied", "ier", "iest", "ily"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 2:
+            yield word[: -len(suffix)] + "y"
     for suffix in _SUFFIXES:
         if word.endswith(suffix) and len(word) - len(suffix) >= 3:
             stem = word[: -len(suffix)]

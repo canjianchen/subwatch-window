@@ -45,31 +45,36 @@ def init_db():
         )
         """
     )
-    # Migration: add `phrase` column for idioms/phrasal expressions the word is part of.
+    # Column migrations. Guarded by the current column set AND wrapped so that two
+    # processes starting at once (e.g. menubar launching watch + self_critic) can't
+    # crash on a "duplicate column name" race — whoever loses the race just no-ops.
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(terms)")}
-    if "phrase" not in cols:
-        conn.execute("ALTER TABLE terms ADD COLUMN phrase TEXT")
+
+    def _add_column(name, ddl):
+        if name in cols:
+            return
+        try:
+            conn.execute(f"ALTER TABLE terms ADD COLUMN {ddl}")
+        except sqlite3.OperationalError:
+            pass  # another process added it first
+
+    # `phrase` = idiom/phrasal expression the word is part of.
+    _add_column("phrase", "phrase TEXT")
     # 'word' = single vocabulary word; 'phrase' = idiom/slang (stored as the full
     # sentence with the matched idiom flagged in `matched`).
-    if "kind" not in cols:
-        conn.execute("ALTER TABLE terms ADD COLUMN kind TEXT NOT NULL DEFAULT 'word'")
-    if "matched" not in cols:
-        conn.execute("ALTER TABLE terms ADD COLUMN matched TEXT")
+    _add_column("kind", "kind TEXT NOT NULL DEFAULT 'word'")
+    _add_column("matched", "matched TEXT")
     # Direct translation of the word/phrase ITSELF (distinct from `chinese`, which
     # holds the surrounding subtitle line). And the path to a cached pronunciation
     # audio clip for the word/phrase.
-    if "translation" not in cols:
-        conn.execute("ALTER TABLE terms ADD COLUMN translation TEXT")
-    if "audio_path" not in cols:
-        conn.execute("ALTER TABLE terms ADD COLUMN audio_path TEXT")
+    _add_column("translation", "translation TEXT")
+    _add_column("audio_path", "audio_path TEXT")
     # The actual Chinese SUBTITLE line that was on screen when captured. Preserved
     # verbatim and never overwritten by enrichment (unlike `chinese`, which the LLM
     # fills with a contextual gloss).
-    if "subtitle_cn" not in cols:
-        conn.execute("ALTER TABLE terms ADD COLUMN subtitle_cn TEXT")
+    _add_column("subtitle_cn", "subtitle_cn TEXT")
     # user-curated personal dictionary: 1 = starred/kept for future reference.
-    if "favorite" not in cols:
-        conn.execute("ALTER TABLE terms ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")
+    _add_column("favorite", "favorite INTEGER NOT NULL DEFAULT 0")
     conn.commit()
     conn.close()
 
@@ -203,7 +208,16 @@ def due_terms(limit=50):
     return [dict(r) for r in rows]
 
 
+_ALLOWED_ORDERS = {
+    "last_seen DESC", "last_seen ASC", "first_seen DESC", "first_seen ASC",
+    "due ASC", "due DESC", "rarity_rank ASC", "rarity_rank DESC",
+}
+
+
 def all_terms(order="last_seen DESC"):
+    # `order` is interpolated into SQL, so whitelist it — never accept arbitrary text.
+    if order not in _ALLOWED_ORDERS:
+        order = "last_seen DESC"
     conn = _connect()
     rows = conn.execute(f"SELECT * FROM terms ORDER BY {order}").fetchall()
     conn.close()

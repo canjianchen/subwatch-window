@@ -90,8 +90,9 @@ def run_pass():
 
     counts = {"good": 0, "too_easy": 0, "ocr_garbage": 0, "proper_name": 0, "bad_translation": 0}
     removed = []
-    import sqlite3
-    conn = sqlite3.connect(config.DB_PATH)
+    # use store's connection helper (WAL + busy_timeout) so this DELETE loop waits for a
+    # lock instead of raising "database is locked" while the watch loop is writing.
+    conn = store._connect()
     for v in verdicts:
         verdict = v.get("verdict", "good")
         counts[verdict] = counts.get(verdict, 0) + 1

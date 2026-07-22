@@ -39,15 +39,24 @@ def _say_mac(text, path):
     return result.returncode == 0 and os.path.exists(path)
 
 
+def _ps_quote(value):
+    """Escape a string for a PowerShell single-quoted literal (double any apostrophes).
+    Must be applied to BOTH the spoken text AND the file path — a Windows username like
+    O'Brien puts an apostrophe in the path and would otherwise break the script."""
+    return value.replace("'", "''")
+
+
 def _say_windows(text, path):
-    safe = text.replace("'", "''")
+    safe_text = _ps_quote(text)
+    safe_path = _ps_quote(path)
     script = (
         "Add-Type -AssemblyName System.Speech; "
         "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-        f"$s.SetOutputToWaveFile('{path}'); $s.Speak('{safe}'); $s.Dispose()"
+        f"$s.SetOutputToWaveFile('{safe_path}'); $s.Speak('{safe_text}'); $s.Dispose()"
     )
     result = subprocess.run(["powershell", "-NoProfile", "-Command", script],
-                            capture_output=True)
+                            capture_output=True,
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     return result.returncode == 0 and os.path.exists(path)
 
 
@@ -76,8 +85,9 @@ def play(path):
         return True
     if IS_WINDOWS:
         # default player via PowerShell SoundPlayer (works for WAV)
-        script = f"(New-Object Media.SoundPlayer '{path}').PlaySync()"
-        subprocess.Popen(["powershell", "-NoProfile", "-Command", script])
+        script = f"(New-Object Media.SoundPlayer '{_ps_quote(path)}').PlaySync()"
+        subprocess.Popen(["powershell", "-NoProfile", "-Command", script],
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         return True
     return False
 
@@ -95,9 +105,9 @@ def generate_all():
         if path:
             store.set_audio(term["word"], path)
             done += 1
-            print(f"  🔊 {text}")
+            print(f"  [audio] {text}")
         else:
-            print(f"  ✗ {text} (audio generation failed)")
+            print(f"  [fail] {text} (audio generation failed)")
     print(f"\nGenerated audio for {done}/{len(pending)} terms.")
 
 

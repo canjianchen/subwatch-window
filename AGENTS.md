@@ -99,6 +99,11 @@ Run `subwatch help` (or read `src/cli.py`'s `USAGE`) for the full command list.
   `notes/`, `logs/`). Never commit a real vocabulary DB, profile, or credentials.
 - **No hardcoded secrets.** Codex reuses its own saved CLI login; the app auto-runs
   in `local_only` mode when Codex is unavailable.
+- **Translation ≠ language intelligence.** Plain EN→ZH translation goes through
+  `translate.py` (a free keyless API + SQLite cache), NOT Codex — that's deliberate,
+  to save LLM tokens. Codex is reserved for judgement (which words are hard),
+  English definitions, and meeting notes. When `use_translation_api` is on, the
+  grading prompt in `hard_phrases_llm.py` intentionally omits the Chinese fields.
 - Match the surrounding code style: small functions, descriptive names, docstrings
   that explain *why*. This repo favors clarity over cleverness.
 
@@ -116,6 +121,7 @@ src/
   watch.py                subtitle capture loop
   detector.py             hard-word detection (frequency list)
   hard_phrases_llm.py     optional Codex word/phrase grading
+  translate.py            cheap EN->ZH translation (Google/MyMemory/Codex + SQLite cache)
   store.py                SQLite vocab + spaced repetition
   review_app.py           Tkinter flashcards
   overlay.py              platform dispatcher → overlay_mac.py / overlay_win.py

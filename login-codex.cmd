@@ -1,6 +1,8 @@
 @echo off
 title SubWatch - Codex sign in
-set "CODEX_CA_CERTIFICATE=C:\Users\q2853\Documents\Codex\subwatch\.venv\Lib\site-packages\certifi\cacert.pem"
+REM Resolve paths relative to this script so it works on any machine / install path.
+set "ROOT=%~dp0"
+set "CODEX_CA_CERTIFICATE=%ROOT%.venv\Lib\site-packages\certifi\cacert.pem"
 echo Signing in to Codex for SubWatch...
 echo.
 call "%APPDATA%\npm\codex.cmd" login --device-auth

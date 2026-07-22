@@ -221,17 +221,27 @@ def _win_ocr_image(image_path):
     Vision), so capture_text()'s top-down sort works identically on both platforms."""
     import asyncio
 
-    # winrt namespaces (package: winrt / winsdk). Import lazily.
+    # winrt namespaces. Package layouts drift across versions: the split PyWinRT
+    # wheels expose these under `winrt.windows.*`, while the maintained fork exposes
+    # the identical API under `winsdk.windows.*`. Try winrt first, fall back to winsdk
+    # so an install of either works (AGENTS.md gotcha #2). Import lazily.
     try:
         from winrt.windows.media.ocr import OcrEngine
         from winrt.windows.globalization import Language
         from winrt.windows.graphics.imaging import BitmapDecoder
         from winrt.windows.storage import StorageFile, FileAccessMode
-    except ImportError as exc:  # pragma: no cover - windows only
-        raise RuntimeError(
-            "Windows OCR needs the PyWinRT namespace packages from requirements.txt.\n"
-            f"(import error: {exc})"
-        )
+    except ImportError:
+        try:
+            from winsdk.windows.media.ocr import OcrEngine
+            from winsdk.windows.globalization import Language
+            from winsdk.windows.graphics.imaging import BitmapDecoder
+            from winsdk.windows.storage import StorageFile, FileAccessMode
+        except ImportError as exc:  # pragma: no cover - windows only
+            raise RuntimeError(
+                "Windows OCR needs the PyWinRT namespace packages (winrt-* in "
+                "requirements.txt) or the winsdk fork. Install either, then retry.\n"
+                f"(import error: {exc})"
+            )
 
     async def _run():
         sfile = await StorageFile.get_file_from_path_async(os.path.abspath(image_path))

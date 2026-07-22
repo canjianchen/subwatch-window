@@ -17,6 +17,10 @@ winrt-Windows.Graphics.Imaging; sys_platform == "win32"
 winrt-Windows.Storage; sys_platform == "win32"
 winrt-Windows.Storage.Streams; sys_platform == "win32"
 winrt-Windows.Globalization; sys_platform == "win32"
+# If the split winrt-* wheels above fail to resolve on a given Python (packaging
+# drift), the maintained `winsdk` fork exposes the identical API and ocr.py falls
+# back to it automatically. Uncomment if you hit a winrt import error:
+# winsdk; sys_platform == "win32"
 
 # --- Cross-platform: audio mode (live transcribe + translate).
 # Whisper is heavy (pulls torch); it's only needed for `subwatch listen`.

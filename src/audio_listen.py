@@ -94,10 +94,12 @@ def _transcribe(model, audio, translate):
 
 
 def _polish_with_llm(raw_text, lang):
-    """Use Codex to clean up Whisper's rough output into a correct, fluent
-    English subtitle (fixes mistranscriptions/awkward phrasing). Best-effort: returns
-    the raw text unchanged if Codex is unavailable. This is the LLM quality
-    pass on top of local Whisper transcription."""
+    """DEPRECATED / no longer called from run(): this was a SECOND Codex call per audio
+    line on top of the difficulty grader (which already tolerates ASR errors), so it was
+    removed from the live loop to cut token cost. Kept for callers/tests that import it.
+
+    Use Codex to clean up Whisper's rough output into a correct, fluent English subtitle.
+    Best-effort: returns the raw text unchanged if Codex is unavailable."""
     if not raw_text:
         return raw_text
     try:
@@ -168,19 +170,14 @@ def run(device_hint=None, model_size="base", translate=True, once=False, polish=
                     continue
 
                 # Publish the RAW transcript instantly so the live subtitle is as
-                # fast as possible (no waiting on the LLM polish / capture).
+                # fast as possible (no waiting on capture).
                 _publish_transcript(text, lang)
 
-                # Codex quality pass cleans Whisper's rough output for
-                # the captured words (and refreshes the subtitle with the clean text).
-                # Skipped in local_only mode.
-                if polish and not config.effective_local_only():
-                    polished = _polish_with_llm(text, lang)
-                    if polished and polished != text:
-                        text = polished
-                        _publish_transcript(text, lang, replace=True)
-
-                # route the recognized English through the shared capture pipeline
+                # route the recognized English through the shared capture pipeline.
+                # (The separate Codex "polish" pass was removed: the difficulty grader
+                # already tolerates ASR errors, so polishing was a second Codex call per
+                # line for no capture benefit. `polish` is kept as a no-op arg for CLI
+                # compatibility.)
                 last_line, captured = _capture_from_text(cfg, text, last_line, lang)
                 tag = f"[{lang}→en]" if (translate and lang and lang != "en") else ""
                 print(f"  🎙️ {tag} {text}", flush=True)
@@ -212,6 +209,7 @@ def _capture_from_text(cfg, english_text, last_line, lang):
     # smart LLM path (preferred), falling back exactly like the watch loop
     if cfg.get("smart_capture", True) and not config.effective_local_only() and watch._ocr_quality_ok(english_text):
         import hard_phrases_llm
+        api_translate = hard_phrases_llm.translation_by_api()
         result = hard_phrases_llm.extract_hard(english_text, level=cfg.get("smart_level", "advanced"))
         if result.get("sentence_cn") is not None and not result.get("_failed"):
             watch._remember(english_text)
@@ -227,6 +225,11 @@ def _capture_from_text(cfg, english_text, last_line, lang):
                     import detector
                     if not clean.isupper() and not detector.is_real_word(clean):
                         continue
+                # With the split on, the grader omits Chinese — fill it from the API.
+                translation = item.get("translation")
+                if api_translate and not (translation or item.get("chinese")):
+                    import translate as _tr
+                    translation = _tr.translate_to_zh(term)
                 if kind == "phrase":
                     is_new = store.upsert_phrase(term, english_text, chinese=None)
                     key = f"phrase:{term.lower()}"
@@ -235,7 +238,7 @@ def _capture_from_text(cfg, english_text, last_line, lang):
                     key = term.lower()
                 if is_new:
                     store.set_enrichment(key, definition=item.get("definition"),
-                                         chinese=item.get("chinese"), translation=item.get("translation"))
+                                         chinese=item.get("chinese"), translation=translation)
                     captured.append((term, kind))
             return english_text, captured
         return english_text, []

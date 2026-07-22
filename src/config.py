@@ -55,6 +55,17 @@ DEFAULT_CONFIG = {
     # Every language-model feature runs through the locally installed Codex CLI.
     "ai_provider": "codex",
     "codex_model": "gpt-5.6-terra",
+    # TRANSLATION: keep the LLM for *judging* which words are hard (that needs
+    # reasoning), but do the actual EN->ZH translation with a cheap/free translation
+    # API instead of spending LLM tokens on it. When on, the difficulty-grading prompt
+    # stops asking Codex for Chinese, and src/translate.py fills the term + sentence
+    # translations via the API (Google endpoint -> MyMemory -> Codex fallback), caching
+    # every result so each string is translated at most once. Turn off to go back to
+    # letting Codex produce translations inline.
+    "use_translation_api": True,
+    # Backend order for translate.py. "auto" = Google web endpoint, then MyMemory, then
+    # the local Codex CLI as a last resort. Any single backend name forces just that one.
+    "translate_provider": "auto",
     # MEETING MODE (Otter-style live Zoom transcript + AI notes + Q&A chat). Captures
     # Zoom's live caption window (primary: Accessibility API; fallback: OCR; last
     # resort: audio→Whisper), assembles a clean timestamped transcript, and runs notes/
@@ -117,8 +128,14 @@ def load_config():
 
 def save_config(cfg):
     os.makedirs(DATA, exist_ok=True)
-    with open(CONFIG_PATH, "w", encoding="utf-8") as handle:
+    # Write atomically (tmp + replace): many threads/processes (panel state poll,
+    # capture loop, meeting/audio workers) read config.json concurrently. An in-place
+    # "w" truncate would let a reader catch a half-written file — load_config() then
+    # silently reverts to DEFAULT_CONFIG, transiently flipping local_only/smart_level.
+    tmp = CONFIG_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
         json.dump(cfg, handle, indent=2, ensure_ascii=False)
+    os.replace(tmp, CONFIG_PATH)
 
 
 def codex_available(refresh=False):

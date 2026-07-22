@@ -8,15 +8,35 @@ Run:  python3 enrich.py            # enrich all terms missing a definition
 import json
 import store
 import config as _cfg
-import config as _cfg
 import codex_ai
+import translate
+
+
+def _use_translation_api():
+    """True when translation should come from the cheap API instead of Codex."""
+    try:
+        cfg = _cfg.load_config()
+        return bool(cfg.get("use_translation_api")) and not cfg.get("local_only")
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def enrich_word(word, context, display_term=None):
-    """Return (definition, chinese) for a word given its sentence context.
+    """Return (definition, chinese, phrase, translation) for a word given its context.
     `display_term` is the human term to define (for phrase keys like 'phrase:get a pass'
-    pass the matched idiom, not the raw key)."""
+    pass the matched idiom, not the raw key).
+
+    Codex is asked only for what needs reasoning (idiom detection + English definition +
+    the contextual sense). The direct term translation comes from the cheap translation
+    API when enabled, so we don't spend LLM tokens on plain translation."""
     target = display_term or word
+    api_translate = _use_translation_api()
+    translation_line = (
+        ""
+        if api_translate
+        else '  "translation": the DIRECT Chinese translation (简体中文) of the word/phrase '
+             'itself, just the term (e.g. for "cops" -> "警察")\n'
+    )
     prompt = (
         f"You are helping a Chinese native speaker learn English from movie subtitles.\n"
         f'Target word: "{target}"\n'
@@ -29,12 +49,14 @@ def enrich_word(word, context, display_term=None):
         "Reply with ONLY a compact JSON object, no markdown, with keys:\n"
         '  "phrase": the idiom/expression if one applies, else null\n'
         '  "definition": a short plain-English meaning of the phrase (if any) or word (<=18 words)\n'
-        '  "translation": the DIRECT Chinese translation (简体中文) of the word/phrase itself, '
-        "just the term (e.g. for \"cops\" -> \"警察\")\n"
+        + translation_line +
         '  "chinese": the Chinese meaning of the word/phrase AS USED IN THIS SENTENCE '
-        "(may match translation; captures the contextual sense)\n"
+        "(简体中文, captures the contextual sense)\n"
     )
-    text = codex_ai.ask(prompt, effort="medium", timeout=180)
+    try:
+        text = codex_ai.ask(prompt, effort="medium", timeout=180)
+    except Exception:  # noqa: BLE001 — best-effort; degrade to no enrichment
+        return None, None, None, None
     # tolerate stray fencing
     if text.startswith("```"):
         text = text.strip("`")
@@ -43,13 +65,21 @@ def enrich_word(word, context, display_term=None):
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        # tolerate trailing commas before } or ] which the model sometimes emits
-        import re as _re
-        data = json.loads(_re.sub(r",\s*([}\]])", r"\1", raw))
+        try:
+            # tolerate trailing commas before } or ] which the model sometimes emits
+            import re as _re
+            data = json.loads(_re.sub(r",\s*([}\]])", r"\1", raw))
+        except json.JSONDecodeError:
+            return None, None, None, None
     phrase = data.get("phrase")
     if isinstance(phrase, str) and not phrase.strip():
         phrase = None
-    return data.get("definition"), data.get("chinese"), phrase, data.get("translation")
+    translation = data.get("translation")
+    if api_translate:
+        # translate the phrase if one applies, else the plain term — matching how the
+        # card is studied. Falls back to the LLM's contextual gloss if the API fails.
+        translation = translate.translate_to_zh(phrase or target) or data.get("chinese")
+    return data.get("definition"), data.get("chinese"), phrase, translation
 
 
 def enrich_all(limit=None):

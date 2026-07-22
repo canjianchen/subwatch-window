@@ -270,7 +270,30 @@ What runs where (full table in `AGENTS.md`):
 *live Zoom caption capture* (it uses the macOS Accessibility API). A captured
 meeting's transcript, AI notes, Q&A and export still view fine on Windows.
 
+## Translation vs. language intelligence
+
+To keep language-model usage cheap, SubWatch splits the work: **Codex decides which
+words/idioms are worth learning and writes the English definitions** (that needs
+reasoning), while the plain **English→Chinese translation is done by a free, keyless
+translation API** (`src/translate.py`) instead of spending LLM tokens on it. Results
+are cached in `db/translation_cache.db`, so each word/phrase is translated over the
+network at most once.
+
+The API chain is Google's public translate endpoint → MyMemory → Codex (last resort),
+all with graceful fallback. It needs no account or API key. Tune it in `data/config.json`:
+
+```json
+{
+  "use_translation_api": true,     // false = let Codex do translation inline (old behavior)
+  "translate_provider": "auto"     // or "google" / "mymemory" / "codex" to force one
+}
+```
+
+In **Local-only** mode the network is never touched — translation falls back to the
+local Codex CLI only.
+
 ## Privacy
 
-OCR and Whisper run locally. Optional language-model features send only their prompt
-text to Codex; enable Local-only to keep every step offline.
+OCR and Whisper run locally. Language intelligence (difficulty judgement, definitions,
+meeting notes) sends only its prompt text to Codex; translation goes to a public
+translation endpoint unless you set Local-only, which keeps every step offline.

@@ -26,8 +26,9 @@ def main():
         print("Deck is empty.")
         return 0
 
-    import sqlite3
-    conn = sqlite3.connect(config.DB_PATH)
+    # use store's connection helper (WAL + busy_timeout) to avoid "database is locked"
+    # if a capture loop is writing while we rescore.
+    conn = store._connect()
     removed, kept = [], []
     for term in terms:
         display = term.get("matched") or term["word"].replace("phrase:", "")

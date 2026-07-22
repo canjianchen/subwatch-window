@@ -21,6 +21,18 @@ def reset_client():
     codex_ai.clear_availability_cache()
 
 
+def translation_by_api():
+    """True when the cheap translation API should supply Chinese, so the difficulty
+    prompt can stop asking Codex for it (saving output tokens on every graded line).
+    False in local_only mode (no network) so the single grading call keeps producing
+    Chinese inline instead of triggering a separate per-term Codex fallback."""
+    try:
+        cfg = config.load_config()
+        return bool(cfg.get("use_translation_api")) and not cfg.get("local_only")
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def extract(sentence):
     """Return a list of {"expression", "definition", "chinese"} for hard expressions
     in the sentence (idioms, slang, phrasal verbs, tricky collocations). [] on any error."""
@@ -242,21 +254,37 @@ def extract_hard_stream(sentence, level="advanced"):
                "advanced": "C1", "expert": "C2"}.get(level, "B1-B2")
     # Live subtitles favor latency. Preserve the essential quality guards while
     # avoiding the much longer calibration prompt used for offline/batch grading.
-    prompt = (
-        f'English movie subtitle (OCR may have minor errors): "{sentence}"\n'
-        f"For a Chinese {learner} learner, return every genuinely useful word, idiom, slang, "
-        f"or non-literal phrasal verb scoring at least {min_score}/10. Include upper-intermediate "
-        "and advanced vocabulary generously. Exclude basic words, obvious literal phrases, "
-        "proper names/titles/brands, and misspelled OCR fragments.\n"
-        "Reply as JSONL only. First translate the whole sentence, then output each term with "
-        "a short English definition and Simplified Chinese:\n"
-        '{"sentence_cn": "整句的简体中文翻译"}\n'
-        '{"term": "...", "kind": "word"|"phrase", "score": <int 1-10>, '
-        '"definition": "<=15 word plain English meaning", '
-        '"translation": "简体中文 of the term itself", '
-        '"chinese": "its meaning in this sentence (简体中文)"}\n'
-        "If nothing qualifies, output only sentence_cn. No markdown or commentary."
-    )
+    if translation_by_api():
+        # The translation API supplies all Chinese, so ask the LLM ONLY for the judgment
+        # (which words are hard) + a short English definition. Dropping the three Chinese
+        # fields shrinks every graded line's output — the whole point of the split.
+        prompt = (
+            f'English movie subtitle (OCR may have minor errors): "{sentence}"\n'
+            f"For a Chinese {learner} learner, return every genuinely useful word, idiom, slang, "
+            f"or non-literal phrasal verb scoring at least {min_score}/10. Include upper-intermediate "
+            "and advanced vocabulary generously. Exclude basic words, obvious literal phrases, "
+            "proper names/titles/brands, and misspelled OCR fragments.\n"
+            "Reply as JSONL only — one term per line, no Chinese, no sentence translation:\n"
+            '{"term": "...", "kind": "word"|"phrase", "score": <int 1-10>, '
+            '"definition": "<=15 word plain English meaning"}\n'
+            "If nothing qualifies, output nothing. No markdown or commentary."
+        )
+    else:
+        prompt = (
+            f'English movie subtitle (OCR may have minor errors): "{sentence}"\n'
+            f"For a Chinese {learner} learner, return every genuinely useful word, idiom, slang, "
+            f"or non-literal phrasal verb scoring at least {min_score}/10. Include upper-intermediate "
+            "and advanced vocabulary generously. Exclude basic words, obvious literal phrases, "
+            "proper names/titles/brands, and misspelled OCR fragments.\n"
+            "Reply as JSONL only. First translate the whole sentence, then output each term with "
+            "a short English definition and Simplified Chinese:\n"
+            '{"sentence_cn": "整句的简体中文翻译"}\n'
+            '{"term": "...", "kind": "word"|"phrase", "score": <int 1-10>, '
+            '"definition": "<=15 word plain English meaning", '
+            '"translation": "简体中文 of the term itself", '
+            '"chinese": "its meaning in this sentence (简体中文)"}\n'
+            "If nothing qualifies, output only sentence_cn. No markdown or commentary."
+        )
     try:
         for obj in _stream_jsonl(prompt):
             if "sentence_cn" in obj and "term" not in obj:
@@ -277,11 +305,46 @@ def extract_hard_stream(sentence, level="advanced"):
 
 
 def _stream_jsonl(prompt, max_tokens=600):
-    """Yield JSONL objects from Codex's final response.
+    """Yield JSONL objects from Codex's final response AS each line arrives.
 
-    `codex exec` deliberately prints only the final agent message to stdout, so this
-    compatibility generator yields completed lines after that message arrives.
+    Streams stdout line-by-line via codex_ai.ask_lines so the first usable item lands in
+    ~3s instead of after the whole response. A single JSON object may be split across
+    lines, so we buffer until braces balance, then parse. Falls back to a buffered call
+    if streaming isn't available for any reason (never breaks the capture loop).
     """
+    try:
+        line_iter = codex_ai.ask_lines(prompt, effort="low", timeout=180)
+    except Exception:  # noqa: BLE001 — fall back to the buffered path below
+        line_iter = None
+
+    if line_iter is not None:
+        buffer = ""
+        streamed = False
+        try:
+            for line in line_iter:
+                # a complete one-object-per-line item parses immediately
+                obj = _parse_jsonl_line(line)
+                if obj is not None:
+                    buffer = ""
+                    streamed = True
+                    yield obj
+                    continue
+                # otherwise accumulate until the braces balance, then parse
+                buffer += line
+                if buffer.count("{") and buffer.count("{") == buffer.count("}"):
+                    obj = _parse_jsonl_line(buffer)
+                    buffer = ""
+                    if obj is not None:
+                        streamed = True
+                        yield obj
+            return  # stream finished cleanly (possibly with zero items)
+        except Exception:  # noqa: BLE001 — streaming failed
+            # If we already emitted items, STOP — re-running the buffered path would
+            # duplicate them. Only fall back when the stream produced nothing.
+            if streamed:
+                return
+
+    # Fallback: buffered single call (older behavior).
     text = _invoke_raw(prompt, max_tokens=max_tokens)
     for line in text.splitlines():
         obj = _parse_jsonl_line(line)

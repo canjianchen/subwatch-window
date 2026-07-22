@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import config
 import detector
@@ -23,6 +24,7 @@ import hard_phrases_llm
 import ocr
 import phrases
 import store
+import translate
 import vocab_feed
 
 
@@ -302,6 +304,23 @@ _SCORE_SEQUENCE = 0
 _LATEST_OVERLAY_SEQUENCE = -1
 _SCORE_LOCK = threading.Lock()
 
+# Translation runs on a cheap API, so fire the line + per-term translations CONCURRENTLY
+# (with each other AND with the LLM difficulty grader) instead of one blocking call at a
+# time. Fast dialogue scrolls quickly; overlapping these network calls is what keeps the
+# on-screen 中文 landing before the line leaves the screen. Shared pool, lazily created.
+_TRANSLATE_POOL = None
+_TRANSLATE_POOL_LOCK = threading.Lock()
+
+
+def _translate_pool():
+    global _TRANSLATE_POOL
+    if _TRANSLATE_POOL is None:
+        with _TRANSLATE_POOL_LOCK:
+            if _TRANSLATE_POOL is None:
+                _TRANSLATE_POOL = ThreadPoolExecutor(max_workers=8,
+                                                     thread_name_prefix="subwatch-tr")
+    return _TRANSLATE_POOL
+
 
 def _enqueue_for_scoring(english_text, chinese_ctx, cfg):
     """Hand a subtitle line to the background scorers. Drops the line (rather than
@@ -357,18 +376,56 @@ def _stream_and_store(english_text, chinese_ctx, level, sequence=None):
     instead of all at once after the whole response (~6.5s). Pure work — no loop state —
     safe on a background thread."""
     sentence_cn = chinese_ctx  # updated from the first streamed line, which is sentence_cn
+    # When the split is on, the LLM only judges difficulty; the translation API supplies
+    # the whole-line Chinese and the per-term Chinese. To keep up with fast subtitles we
+    # OVERLAP all of it: the line translation starts immediately (concurrent with the LLM
+    # grader), and each term's translation is dispatched the moment it streams in — so
+    # the network round-trips run in parallel instead of one-after-another.
+    api_translate = hard_phrases_llm.translation_by_api()
+    pool = _translate_pool() if api_translate else None
+    line_future = None
+    if api_translate and not chinese_ctx:
+        # only translate the whole line when we don't already have the on-screen Chinese
+        line_future = pool.submit(translate.translate_to_zh, english_text)
+
     overlay_items = []  # all VALID hard words of this line, for the on-screen overlay
+    pending = []        # (item, term_cn_future_or_none) awaiting translation, in stream order
     for obj in hard_phrases_llm.extract_hard_stream(english_text, level=level):
         if obj.get("_failed"):
             break  # true LLM error — skip the line (don't fall back to the frequency flood)
         if "sentence_cn" in obj and "term" not in obj:
             sentence_cn = obj.get("sentence_cn") or sentence_cn
-            # push the sentence translation early so the overlay can show it as context
             vocab_feed.push([], english_text, sentence_cn)
             continue
+        # With the split on, the LLM omits Chinese — kick off the term translation NOW
+        # (don't block the stream loop) and collect the result after the stream ends.
+        term_future = None
+        if api_translate and not (obj.get("translation") or obj.get("chinese")):
+            term_text = (obj.get("term") or "").strip()
+            if term_text:
+                term_future = pool.submit(translate.translate_to_zh, term_text)
+        pending.append((obj, term_future))
+
+    if line_future is not None:
+        try:
+            line_cn = line_future.result(timeout=8)
+        except Exception:  # noqa: BLE001
+            line_cn = None
+        if line_cn:
+            sentence_cn = line_cn
+            vocab_feed.push([], english_text, sentence_cn)
+
+    for obj, term_future in pending:
+        if term_future is not None and not (obj.get("translation") or obj.get("chinese")):
+            try:
+                api_cn = term_future.result(timeout=8)
+            except Exception:  # noqa: BLE001
+                api_cn = None
+            if api_cn:
+                obj["translation"] = api_cn
         term_cn = (obj.get("translation") or obj.get("chinese") or "").strip()
-        # A word card without its requested Chinese meaning is incomplete. Ignore a
-        # malformed model item rather than showing an apparently broken blank card.
+        # A word card without its Chinese meaning is incomplete. Ignore a malformed model
+        # item (or a term the translation API couldn't render) rather than showing a blank card.
         if not term_cn:
             continue
         stored = _store_item(obj, english_text, sentence_cn, level)
@@ -376,8 +433,7 @@ def _stream_and_store(english_text, chinese_ctx, level, sequence=None):
             continue
         term, kind, is_new = stored
         # show EVERY valid hard word of this line on the overlay (new or already-known),
-        # since the user wants to read them on screen as the line plays. Use the LLM's
-        # direct Chinese of the term, falling back to its contextual gloss.
+        # since the user wants to read them on screen as the line plays.
         overlay_items.append({"term": term, "kind": kind, "cn": term_cn})
         if is_new:
             print(f"   ➕ captured: {term}  ({kind})", flush=True)
@@ -566,6 +622,11 @@ def run(once=False):
             except PermissionError as exc:
                 print(f"\n⚠️  {exc}\n", flush=True)
                 return
+            except Exception as exc:  # noqa: BLE001 — a transient OCR/screencapture
+                # hiccup must not kill the whole watch loop; log and keep going.
+                print(f"   (capture error: {exc})", flush=True)
+                time.sleep(interval)
+                continue
 
             english_now, chinese_now = ([], [])
             # Re-derive shown subtitle for the live transcript from last_line.
