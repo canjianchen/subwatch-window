@@ -202,3 +202,24 @@ def clear_availability_cache():
     global _AVAILABLE, _AVAILABLE_AT
     _AVAILABLE = None
     _AVAILABLE_AT = 0.0
+
+
+def _selftest():
+    """Diagnostic: `python src/codex_ai.py` — is Codex reachable, and how slow is a call?
+    Prints login status, a tiny timed grading call, and any error, so we can tell whether
+    the scoring stall is 'Codex slow' vs 'Codex unreachable'."""
+    import time as _t
+    exe = _native_codex()
+    print(f"codex exe: {exe or 'NOT FOUND'}")
+    print(f"available (login ok): {available(refresh=True)}")
+    start = _t.time()
+    try:
+        result = ask('Reply only with the JSON {"ok":1}', effort="low", timeout=60)
+        print(f"RESULT: {result!r}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"ERROR: {type(exc).__name__}: {exc}")
+    print(f"took {round(_t.time() - start, 1)}s")
+
+
+if __name__ == "__main__":
+    _selftest()

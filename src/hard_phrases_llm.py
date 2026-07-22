@@ -70,17 +70,24 @@ def extract(sentence):
         return []
 
 
-def _invoke_raw(prompt, max_tokens=600, retries=2):
+def _invoke_raw(prompt, max_tokens=600, retries=1):
+    # Live subtitle grading favors latency: a subtitle is on screen only a few seconds,
+    # so a word must not wait minutes. Cap each Codex call at 25s and retry at most once
+    # (was 180s x 3 attempts = up to 9 min per word — a slow/retrying Codex would freeze
+    # the overlay on "翻译中…" indefinitely). Configurable via `grade_timeout`.
+    try:
+        timeout = int(config.load_config().get("grade_timeout", 25))
+    except Exception:  # noqa: BLE001
+        timeout = 25
     last = None
     for attempt in range(retries + 1):
         try:
-            # Live subtitle grading favors latency, so use low reasoning effort.
-            return codex_ai.ask(prompt, effort="low", timeout=180)
+            return codex_ai.ask(prompt, effort="low", timeout=timeout)
         except Exception as exc:  # noqa: BLE001 — transient; brief backoff
             last = exc
             if attempt < retries:
                 import time
-                time.sleep(0.8 * (attempt + 1))
+                time.sleep(0.5)
     raise last
 
 
@@ -338,7 +345,7 @@ def _stream_jsonl(prompt, max_tokens=600):
     line_iter = None
     if _streaming_enabled():
         try:
-            line_iter = codex_ai.ask_lines(prompt, effort="low", timeout=180)
+            line_iter = codex_ai.ask_lines(prompt, effort="low", timeout=45)
         except Exception:  # noqa: BLE001 — fall back to the buffered path below
             line_iter = None
 
