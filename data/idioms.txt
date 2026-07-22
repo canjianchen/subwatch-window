@@ -1,0 +1,356 @@
+# SubWatch idiom & slang phrase list — one phrase per line, lowercase.
+# Used to catch multi-word expressions that single-word capture misses
+# (e.g. "help yourself", "knock it off"). Comments (#) and blank lines ignored.
+# Add your own phrases here, one per line.
+
+help yourself
+knock it off
+knock yourself out
+hold on
+hang on
+hang in there
+hang out
+come on
+cut it out
+back off
+beat it
+get lost
+get over it
+get a grip
+get it together
+pull yourself together
+suck it up
+deal with it
+take it easy
+chill out
+calm down
+settle down
+wise up
+grow up
+man up
+shut up
+spit it out
+out with it
+make up your mind
+mind your own business
+none of your business
+mind your manners
+watch your mouth
+watch your back
+watch out
+look out
+heads up
+piece of cake
+no big deal
+no biggie
+big deal
+what's the deal
+what's up
+what's the matter
+what's going on
+how's it going
+take your time
+take a hike
+take a seat
+take it or leave it
+go for it
+go ahead
+go figure
+figure it out
+get the picture
+you got it
+got it
+no worries
+no problem
+my bad
+fair enough
+makes sense
+sounds good
+you bet
+for real
+no way
+way to go
+good for you
+good grief
+give me a break
+cut me some slack
+cut to the chase
+get to the point
+long story short
+to be honest
+to be fair
+let's face it
+face the music
+bite the bullet
+break a leg
+break the ice
+hit the road
+hit the sack
+hit the hay
+call it a day
+call it quits
+wrap it up
+keep it up
+keep going
+keep it down
+keep your cool
+lose your cool
+lose it
+freak out
+flip out
+chicken out
+back out
+sell out
+work it out
+sort it out
+let it go
+let it slide
+let me know
+let's go
+move it
+step on it
+hurry up
+slow down
+hold your horses
+easy does it
+fair and square
+once and for all
+sooner or later
+better late than never
+no offense
+no offence
+big time
+all set
+all good
+all in
+all out
+count me in
+count me out
+i'm in
+i'm out
+knock on wood
+fingers crossed
+cross my heart
+you wish
+in your dreams
+think again
+dream on
+get real
+wake up
+snap out of it
+pull it off
+pull through
+hang tight
+sit tight
+play it cool
+play it safe
+play dumb
+play along
+go along with it
+make it work
+make do
+make a scene
+make a move
+make yourself at home
+help me out
+hear me out
+back me up
+cover for me
+fill me in
+catch me up
+keep me posted
+keep an eye on
+keep in touch
+stay put
+stay tuned
+hold the line
+hold up
+hold it
+hold tight
+give it a shot
+give it a go
+give it a rest
+take a chance
+take the plunge
+take charge
+take over
+take off
+get going
+get moving
+get out
+get out of here
+get a move on
+get real
+get well soon
+hang on a second
+just a second
+hold on a second
+give me a sec
+back in a sec
+on second thought
+my pleasure
+no sweat
+piece of work
+big shot
+know-it-all
+show off
+heads or tails
+spill the beans
+let the cat out of the bag
+under the weather
+over the moon
+on the same page
+on the fence
+on the house
+on the dot
+on the spot
+in a nutshell
+in the loop
+out of the loop
+out of line
+out of the blue
+out of hand
+out of it
+up to you
+up for it
+down to earth
+down for it
+sick and tired
+fed up
+worn out
+burned out
+freaked out
+creeped out
+weirded out
+chickened out
+ripped off
+messed up
+screwed up
+all over the place
+once in a while
+every now and then
+here and there
+back and forth
+sooner the better
+the more the merrier
+easier said than done
+no pain no gain
+better safe than sorry
+when pigs fly
+hold your tongue
+bite your tongue
+watch it
+say no more
+you name it
+name it
+go nuts
+go crazy
+lighten up
+loosen up
+open up
+speak up
+own up
+fess up
+come clean
+back to square one
+square one
+the last straw
+final straw
+last call
+that's that
+that figures
+go figure
+your call
+my treat
+on me
+it's on me
+take it personally
+don't sweat it
+don't bother
+don't mention it
+think nothing of it
+have a blast
+knock em dead
+go all out
+all bets are off
+the whole nine yards
+bend over backwards
+go the extra mile
+play hardball
+call the shots
+pull strings
+cut corners
+jump the gun
+miss the boat
+ring a bell
+hit the nail on the head
+beat around the bush
+add fuel to the fire
+rock the boat
+steal the show
+break even
+in the nick of time
+at the eleventh hour
+a piece of my mind
+get cold feet
+have second thoughts
+have a change of heart
+turn over a new leaf
+let bygones be bygones
+bury the hatchet
+keep a low profile
+play it by ear
+take it in stride
+roll with the punches
+go with the flow
+draw the line
+hold the fort
+take the heat
+throw in the towel
+on cloud nine
+down in the dumps
+in hot water
+in deep trouble
+in the doghouse
+walking on eggshells
+caught off guard
+caught red handed
+off the hook
+off the record
+under the radar
+behind the eight ball
+ahead of the curve
+on the ball
+on a roll
+on edge
+on the rocks
+go dutch
+jet lag
+mighty fine
+gray area
+grey area
+raking it in
+table games
+take a moment
+take care of
+take care
+living the dream
+pitching in
+pitch in
+well versed
+nailed it
+put up a stink
+for life
+customer for life
+lost track of time
+okey-dokey
+gotta go
+right home
+kill two birds with one stone
+two birds with one stone
+bird in the hand
+birds of a feather
+on top of it
+boy toy
+by the way
+feel bad

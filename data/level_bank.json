@@ -1,0 +1,17 @@
+{
+  "description": "Graded English vocabulary/idiom bank for placement. Bands 1-8 go from everyday to rare. The learner marks which they DON'T know; their level = the band where they start failing.",
+  "bands": [
+    {"band": 1, "cefr": "A2", "items": ["happy", "doctor", "kitchen", "between", "remember", "weather"]},
+    {"band": 2, "cefr": "B1", "items": ["argue", "borrow", "polite", "decision", "complain", "neighbor"]},
+    {"band": 3, "cefr": "B2", "items": ["reluctant", "thorough", "deserve", "assume", "tedious", "sincere"]},
+    {"band": 4, "cefr": "B2+", "items": ["overwhelm", "subtle", "inevitable", "resent", "ambiguous", "deteriorate"]},
+    {"band": 5, "cefr": "C1", "items": ["alleged", "displaced", "endure", "humble brag", "compelling", "tentative"]},
+    {"band": 6, "cefr": "C1+", "items": ["ragtag", "snide", "askew", "devoid of", "par for the course", "candid"]},
+    {"band": 7, "cefr": "C2", "items": ["flabbergasted", "sudsy", "snitch", "go out of your way", "smithereens", "amorous"]},
+    {"band": 8, "cefr": "C2+/rare", "items": ["persnickety", "discombobulated", "lexicographic", "on tenterhooks", "gander", "coot"]}
+  ],
+  "idiom_check": [
+    "spill the beans", "under the weather", "a snake oil salesman", "at half-mast",
+    "go down the rabbit hole", "throw in the towel", "the whole nine yards", "cut to the chase"
+  ]
+}

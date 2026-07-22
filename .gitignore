@@ -1,0 +1,26 @@
+# Personal / runtime data — never shared (per-user)
+# captured vocabulary + spaced-repetition state
+db/
+# this user's settings, monitors, capture region
+data/config.json
+# this user's level-test results & feedback
+data/profile.json
+# generated pronunciation clips
+data/audio/
+# exported vocabulary notes
+notes/
+# capture + critique logs and runtime state
+logs/
+
+# Self-hosted JS libs (large; re-fetched by setup.sh)
+src/static/*.js
+
+# Python / OS cruft
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+*.tmp
+
+# Local Claude Code agent state
+.claude/

@@ -1,0 +1,26 @@
+# SubWatch dependencies — cross-platform (macOS + Windows).
+# Platform markers keep `pip install -r requirements.txt` from failing on the
+# wrong OS: pip silently skips a line whose marker doesn't match the host.
+
+# --- macOS-only: overlays + screen capture use Apple's Cocoa/Quartz via PyObjC.
+pyobjc-framework-Cocoa; sys_platform == "darwin"
+pyobjc-framework-Quartz; sys_platform == "darwin"
+
+# --- Windows-only: screen grab (mss) + on-device OCR (Windows.Media.Ocr bindings).
+# The current PyWinRT distribution publishes each namespace separately.
+mss; sys_platform == "win32"
+winrt-runtime; sys_platform == "win32"
+winrt-Windows.Foundation; sys_platform == "win32"
+winrt-Windows.Foundation.Collections; sys_platform == "win32"
+winrt-Windows.Media.Ocr; sys_platform == "win32"
+winrt-Windows.Graphics.Imaging; sys_platform == "win32"
+winrt-Windows.Storage; sys_platform == "win32"
+winrt-Windows.Storage.Streams; sys_platform == "win32"
+winrt-Windows.Globalization; sys_platform == "win32"
+
+# --- Cross-platform: audio mode (live transcribe + translate).
+# Whisper is heavy (pulls torch); it's only needed for `subwatch listen`.
+# Subtitle mode, review, notes, and the panel work without it.
+sounddevice
+numpy
+openai-whisper

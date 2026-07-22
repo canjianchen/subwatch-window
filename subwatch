@@ -1,0 +1,4 @@
+#!/bin/bash
+# SubWatch control script (macOS/Linux) — delegates to the cross-platform CLI.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT/src" && exec python3 cli.py "$@"
