@@ -273,19 +273,38 @@ def process_frame(cfg, last_line):
             _enqueue_for_scoring(english_text, chinese_ctx, cfg)
             return english_text or last_line, []
 
-        # FREQUENCY MODE (only when smart_capture is explicitly OFF): rank-based words ...
+        # FREQUENCY MODE (when smart_capture is OFF, or as the no-Codex fallback):
+        # pick hard words by the frequency list, and — since there's no LLM to produce
+        # Chinese here — translate each captured term with the cheap translation API so
+        # the overlay/deck still gets 中文. Runs the translations in parallel to keep up.
         _remember(english_text)
-        overlay_items = []
+        use_api = hard_phrases_llm.translation_by_api()
+        pool = _translate_pool() if use_api else None
+        terms = []  # (term, kind, translation_future_or_None)
         for word, rank in detector.hard_words(english_text, cfg):
-            overlay_items.append({"term": word, "kind": "word", "cn": ""})
+            fut = pool.submit(translate.translate_to_zh, word) if use_api else None
+            terms.append((word, "word", fut))
             if store.upsert_term(word, context=english_text, chinese=chinese_ctx, rarity_rank=rank):
                 captured.append((word, rank))
-        # ... plus curated idiom list
         if cfg.get("capture_phrases", True):
             for matched in phrases.find_phrases(english_text):
-                overlay_items.append({"term": matched, "kind": "phrase", "cn": ""})
+                fut = pool.submit(translate.translate_to_zh, matched) if use_api else None
+                terms.append((matched, "phrase", fut))
                 if store.upsert_phrase(matched, english_text, chinese=chinese_ctx):
                     captured.append((f"“{matched}”", "phrase"))
+        overlay_items = []
+        for term, kind, fut in terms:
+            term_cn = ""
+            if fut is not None:
+                try:
+                    term_cn = (fut.result(timeout=4) or "").strip()
+                except Exception:  # noqa: BLE001 — best-effort; show the word without 中文
+                    term_cn = ""
+            overlay_items.append({"term": term, "kind": kind, "cn": term_cn})
+            # persist the translation so the review deck / notes have it too
+            if term_cn:
+                key = f"phrase:{term.lower()}" if kind == "phrase" else term.lower()
+                store.set_enrichment(key, translation=term_cn)
         # mirror the line's words to the on-screen vocab overlay
         vocab_feed.push(overlay_items, english_text, chinese_ctx)
 
